@@ -29,7 +29,11 @@ import com.google.android.gms.maps.model.Circle;
 import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.LatLngBounds;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+
+import java.util.LinkedList;
+import java.util.List;
 
 public class MapsActivity extends FragmentActivity implements OnMapReadyCallback, GoogleMap.OnMyLocationButtonClickListener, GoogleMap.OnMyLocationClickListener {
 
@@ -42,6 +46,10 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     private int index = 0;
     LocationCallback mLocationCallback;
     private FusedLocationProviderClient mFusedLocationClient;
+    final private int tagDistance = 30;
+    Player itPlayer;
+    List<Marker> playerMarkers;
+    List<Circle> playerCircles;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,6 +62,9 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
         ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.ACCESS_COARSE_LOCATION}, 1);
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+
+        playerMarkers = new LinkedList<>();
+        playerCircles = new LinkedList<>();
 
         startingPoint = new LatLng(47.653120, -122.351991);
         gameSession = new Session("testing", startingPoint, 200);
@@ -73,13 +84,15 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         me.addLocations(new LatLng(47.652800, -122.352600));
         picolas.addLocations(new LatLng(47.653600, -122.351300));
 
+        itPlayer = picolas;
+
         mLocationCallback = new LocationCallback() {
             @Override
             public void onLocationResult(LocationResult locationResult) {
                 if (locationResult == null) {
                     return;
                 }
-                updatePosition();
+                updateMarkerAndCircleForAllPlayers(gameSession.getPlayers());
             }
         };
 
@@ -128,15 +141,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                 .fillColor(Color.TRANSPARENT)
                 .strokeWidth(5));
 
-        for (Player player: gameSession.getPlayers()) {
-            mMap.addMarker(new MarkerOptions().position(player.getLocations().get(player.getLocations().size() - 1)).title(player.getUsername()));
-            mMap.addCircle(new CircleOptions()
-                    .center(player.getLocations().get(player.getLocations().size() - 1))
-                    .radius(20)
-                    .strokeColor(Color.BLUE)
-                    .fillColor(Color.TRANSPARENT)
-                    .strokeWidth(3));
-        }
+       initializeMarkersAndCirclesForPlayers(gameSession.getPlayers());
 
     }
 
@@ -149,30 +154,6 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     public boolean onMyLocationButtonClick() {
         Toast.makeText(this, "My Location button clicked", Toast.LENGTH_SHORT).show();
         return false;
-    }
-
-    public void updatePosition() {
-        mMap.clear();
-        mMap.addMarker(new MarkerOptions().position(startingPoint).title("Game Center").icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
-        mMap.moveCamera(CameraUpdateFactory.zoomTo(16));
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(startingPoint));
-        Circle gameBounds = mMap.addCircle(new CircleOptions()
-                .center(startingPoint)
-                .radius(gameSession.getRadius())
-                .strokeColor(Color.RED)
-                .fillColor(Color.TRANSPARENT)
-                .strokeWidth(5));
-
-        for (Player player: gameSession.getPlayers()) {
-            mMap.addMarker(new MarkerOptions().position(player.getLocations().get(index)).title(player.getUsername()));
-            mMap.addCircle(new CircleOptions()
-                    .center(player.getLocations().get(index))
-                    .radius(20)
-                    .strokeColor(Color.GREEN)
-                    .fillColor(Color.TRANSPARENT)
-                    .strokeWidth(2));
-        }
-        index++;
     }
 
     private LocationRequest getLocationRequest() {
@@ -189,5 +170,68 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
     private void startLocationUpdates() {
         mFusedLocationClient.requestLocationUpdates(getLocationRequest(), mLocationCallback, Looper.getMainLooper());
+    }
+
+    private void initializeMarkersAndCirclesForPlayers(List<Player> players) {
+        for(Player player: players) {
+            playerMarkers.add(mMap.addMarker(new MarkerOptions()
+                    .position(player.getLocations().get(index))
+                    .title(player.getUsername())));
+            playerCircles.add(mMap.addCircle(new CircleOptions()
+                    .center(player.getLocations().get(index))
+                    .radius(tagDistance)
+                    .strokeColor(Color.GREEN)
+                    .fillColor(Color.TRANSPARENT)
+                    .strokeWidth(3)));
+        }
+    }
+
+    private void updateMarkerAndCircleForAllPlayers(List<Player> players) {
+        index++;
+        for (int i = 0; i < players.size(); i++) {
+            playerMarkers.get(i).setPosition(players.get(i).getLocations().get(index));
+            playerCircles.get(i).setCenter(players.get(i).getLocations().get(index));
+        }
+    }
+
+    // Equation is from https://stackoverflow.com/questions/639695/how-to-convert-latitude-or-longitude-to-meters
+    // convert to two location points to distance between them in meters
+    private double distanceBetweenLatLongPoints(double lat1, double long1, double lat2, double long2) {
+        // radius of the Earth in km
+        double R = 6378.137;
+        double dLat = (lat2 * Math.PI / 180) - (lat1 * Math.PI / 180);
+        double dLong = (long2 * Math.PI / 180) - (long1 * Math.PI / 180);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLong / 2) * Math.sin(dLong / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        double d = R * c;
+        return d * 1000;
+    }
+
+    // check if the player is tagged by the it player
+    // check if the distance between the it player and the other player is less than the specified tag distance
+    private boolean isTagged(Player player) {
+        double distanceBetweenPlayers = distanceBetweenLatLongPoints(itPlayer.getLocations().get(index).latitude,
+                itPlayer.getLocations().get(index).longitude,
+                player.getLocations().get(index).latitude,
+                player.getLocations().get(index).longitude);
+
+        if (distanceBetweenPlayers < tagDistance) {
+            player.setIt(true);
+            itPlayer.setIt(false);
+            itPlayer = player;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    private void checkForTag() {
+        for(Player player: gameSession.getPlayers()) {
+            if (isTagged(player)) {
+                Toast.makeText(this, "" + player.getUsername() + " is now it!!!", Toast.LENGTH_SHORT);
+            }
+        }
     }
 }

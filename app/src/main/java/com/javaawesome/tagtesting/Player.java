@@ -44,6 +44,8 @@ public class Player {
         return locations;
     }
 
+    public LatLng getLastLocation() { return locations.get(locations.size() -1); }
+
     public void setIt(boolean it) {
         isIt = it;
     }
