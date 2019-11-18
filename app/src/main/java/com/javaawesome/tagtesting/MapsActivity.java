@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.util.Log;
 import android.widget.Toast;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
@@ -46,10 +47,15 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     private int index = 0;
     LocationCallback mLocationCallback;
     private FusedLocationProviderClient mFusedLocationClient;
-    final private int tagDistance = 30;
+    final private int tagDistance = 50;
     Player itPlayer;
+    int itColor = Color.RED;
+    int notItColor = Color.GREEN;
+    float itHue = BitmapDescriptorFactory.HUE_RED;
+    float notItHue = BitmapDescriptorFactory.HUE_GREEN;
     List<Marker> playerMarkers;
     List<Circle> playerCircles;
+    private final String TAG = "thequangnguyen";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,17 +80,18 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         gameSession.addPlayer(me);
         gameSession.addPlayer(picolas);
         me.addLocations(new LatLng(47.653200, -122.352200));
-        picolas.addLocations(new LatLng(47.653300, -122.351700));
+        picolas.addLocations(new LatLng(47.652300, -122.353100));
         me.addLocations(new LatLng(47.653100, -122.352300));
-        picolas.addLocations(new LatLng(47.653400, -122.351600));
+        picolas.addLocations(new LatLng(47.652400, -122.353000));
         me.addLocations(new LatLng(47.653000, -122.352400));
-        picolas.addLocations(new LatLng(47.653500, -122.351500));
+        picolas.addLocations(new LatLng(47.652500, -122.352900));
         me.addLocations(new LatLng(47.652900, -122.352500));
-        picolas.addLocations(new LatLng(47.653600, -122.351400));
+        picolas.addLocations(new LatLng(47.652600, -122.352800));
         me.addLocations(new LatLng(47.652800, -122.352600));
-        picolas.addLocations(new LatLng(47.653600, -122.351300));
+        picolas.addLocations(new LatLng(47.652700, -122.352700));
 
         itPlayer = picolas;
+        picolas.setIt(true);
 
         mLocationCallback = new LocationCallback() {
             @Override
@@ -130,14 +137,14 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         mMap.setOnMyLocationClickListener(this);
 
 
-//      Add a marker in Sydney and move the camera
-        mMap.addMarker(new MarkerOptions().position(startingPoint).title("Game Center").icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
+//      Add a marker in center of game camera and move the camera
+//        mMap.addMarker(new MarkerOptions().position(startingPoint).title("Game Center").icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
         mMap.moveCamera(CameraUpdateFactory.zoomTo(16));
         mMap.moveCamera(CameraUpdateFactory.newLatLng(startingPoint));
         Circle gameBounds = mMap.addCircle(new CircleOptions()
                 .center(startingPoint)
                 .radius(gameSession.getRadius())
-                .strokeColor(Color.RED)
+                .strokeColor(Color.YELLOW)
                 .fillColor(Color.TRANSPARENT)
                 .strokeWidth(5));
 
@@ -174,23 +181,51 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
     private void initializeMarkersAndCirclesForPlayers(List<Player> players) {
         for(Player player: players) {
-            playerMarkers.add(mMap.addMarker(new MarkerOptions()
+            Marker marker = mMap.addMarker(new MarkerOptions()
                     .position(player.getLocations().get(index))
-                    .title(player.getUsername())));
-            playerCircles.add(mMap.addCircle(new CircleOptions()
+                    .title(player.getUsername()));
+            Circle circle = mMap.addCircle(new CircleOptions()
                     .center(player.getLocations().get(index))
                     .radius(tagDistance)
-                    .strokeColor(Color.GREEN)
                     .fillColor(Color.TRANSPARENT)
-                    .strokeWidth(3)));
+                    .strokeWidth(3));
+
+            // change color of marker depending on if player is it or not
+            if (player.isIt()) {
+                marker.setIcon(BitmapDescriptorFactory.defaultMarker(itHue));
+                circle.setStrokeColor(itColor);
+            } else {
+                marker.setIcon(BitmapDescriptorFactory.defaultMarker(notItHue));
+                circle.setStrokeColor(notItColor);
+            }
+
+            playerMarkers.add(marker);
+            playerCircles.add(circle);
+
+//            playerMarkers.add(mMap.addMarker(new MarkerOptions()
+//                    .position(player.getLocations().get(index))
+//                    .title(player.getUsername()).icon(BitmapDescriptorFactory.defaultMarker(notItHue))));
+//            playerCircles.add(mMap.addCircle(new CircleOptions()
+//                    .center(player.getLocations().get(index))
+//                    .radius(tagDistance)
+//                    .strokeColor(notItColor)
+//                    .fillColor(Color.TRANSPARENT)
+//                    .strokeWidth(3)));
         }
     }
+
 
     private void updateMarkerAndCircleForAllPlayers(List<Player> players) {
         index++;
         for (int i = 0; i < players.size(); i++) {
             playerMarkers.get(i).setPosition(players.get(i).getLocations().get(index));
             playerCircles.get(i).setCenter(players.get(i).getLocations().get(index));
+            checkForTag();
+            if (players.get(i).isIt()) {
+                playerMarkers.get(i).setIcon(BitmapDescriptorFactory.defaultMarker(itHue));
+                playerCircles.get(i).setStrokeColor(itColor);
+            }
+
         }
     }
 
@@ -217,6 +252,8 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                 player.getLocations().get(index).latitude,
                 player.getLocations().get(index).longitude);
 
+        Log.i(TAG, "distance between players is " + distanceBetweenPlayers + " meters");
+
         if (distanceBetweenPlayers < tagDistance) {
             player.setIt(true);
             itPlayer.setIt(false);
@@ -229,8 +266,12 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
     private void checkForTag() {
         for(Player player: gameSession.getPlayers()) {
+            if (player == itPlayer) {
+                continue;
+            }
             if (isTagged(player)) {
                 Toast.makeText(this, "" + player.getUsername() + " is now it!!!", Toast.LENGTH_SHORT);
+                return;
             }
         }
     }
